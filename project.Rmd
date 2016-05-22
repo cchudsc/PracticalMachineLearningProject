@@ -1,0 +1,84 @@
+---
+title: "Practical Machine Learning - Course Project"
+output: 
+  html_document:
+    keep_md: true
+---
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+##Objectives
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+##Load required libraries
+**Here make use of doParallel library to enable caret to use multiple cores in the system**
+```{r warning=FALSE, message=FALSE}
+library(caret)
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+```
+
+## Data Preparation
+**Download and read data**
+```{r}
+trainingURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainingFile = "ml-training.csv"
+testingURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+testingFile = "pml-testing.csv"
+if (!file.exists(trainingFile)) {
+    download.file(trainingURL,trainingFile)
+}
+if (!file.exists(testingFile)) {
+    download.file(testingURL,testingFile)
+}
+trainingData = read.csv(trainingFile, header = TRUE, sep = ",", quote = "\"", na.strings=c("","NA","#DIV/0!"))
+testingData = read.csv(testingFile, header = TRUE, sep = ",", quote = "\"", na.strings=c("","NA","#DIV/0!"))
+```
+
+**Creating training and testing dataset**
+
+Partition the data, training set would have 60% of data and 40% for testing set. Columns such as user_name, timestamps, num_windows are not related to the measures and they are removed. Also, a zero variance analysis is performed to remove columns with zero or near zero variance. At last, all columns with NA values are also excluded.
+```{r}
+set.seed(20160521)
+trainingSet <- createDataPartition(y=trainingData$classe, p=0.6, list=FALSE)
+training <- trainingData[trainingSet,]
+testing <- trainingData[-trainingSet,]
+
+#Remove zero variance predictors
+training <- training[,-nearZeroVar(training)]
+#Remove id, username, timestamps and num_window which are not relevant to the reading
+training <- training[,c(-1,-2,-3,-4,-5,-6)]
+
+#Remove columns with NA values
+training <- training[colSums(is.na(training))==0]
+```
+
+## Start training - Using Random forests
+Use random forests to train the model, with cross validation
+```{r warning=FALSE, message=FALSE}
+rf <- train(classe ~., data=training, method="rf", prox=TRUE, trControl=trainControl(method="cv"))
+rf$finalModel
+```
+
+##Perform prediction and check for accurary
+After the final model is established, examine the confusion matric with the testing set splitted from training set
+```{r warning=FALSE, message=FALSE}
+rfPredict <- predict(rf, testing)
+rfConfusionMatric <- confusionMatrix(rfPredict, testing$classe)
+rfConfusionMatric
+```
+The accuracy of the prediction is `r round((rfConfusionMatric$overall[1])*100,2)`% while out of sample error is `r round((1-rfConfusionMatric$overall[1])*100,2)`%. This indicate the prediction is accurate.
+
+##Perform prediction with testing data
+**Use the trained random forest to predict the testing data**
+```{r}
+testingData$classe <- predict(rf, testingData)
+testingData[,c(160,161)]
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+stopCluster(cl)
+```
